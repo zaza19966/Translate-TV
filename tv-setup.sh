@@ -52,7 +52,7 @@ android {
     defaultConfig {
         applicationId = "com.example.gametranslator.tv"
         minSdk = 29
-        targetSdk = 30
+        targetSdk = 29
         versionCode = 1
         versionName = "1.0"
     }

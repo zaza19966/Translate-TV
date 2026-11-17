@@ -1,5 +1,8 @@
 package com.example.gametranslator
 
+import android.util.TypedValue
+import android.os.SystemClock
+import android.graphics.drawable.GradientDrawable
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -120,10 +123,66 @@ class TvService : Service() {
     }
 
     private var fallbackToast: Toast? = null
+    private var toastText = ""
+    private var toastBottom = true
+    private var toastUntil = 0L
+    private val toastLoop = object : Runnable {
+        override fun run() {
+            if (SystemClock.uptimeMillis() < toastUntil && toastText.isNotEmpty()) {
+                drawToast()
+                main.postDelayed(this, 3300)
+            } else {
+                fallbackToast?.cancel()
+                fallbackToast = null
+            }
+        }
+    }
 
-    private fun showToastFallback(text: String) {
+    /** بديل اللوحة عند غياب إذن العرض: رسالة منسّقة تتجدد كل ثواني قليلة */
+    private fun showToastFallback(lines: List<String>, bottom: Boolean) {
+        toastText = lines.joinToString("\n")
+        toastBottom = bottom
+        toastUntil = SystemClock.uptimeMillis() + 12000
+        main.removeCallbacks(toastLoop)
+        main.post(toastLoop)
+    }
+
+    private fun stopToast() {
+        toastUntil = 0
+        toastText = ""
+        main.removeCallbacks(toastLoop)
         fallbackToast?.cancel()
-        fallbackToast = Toast.makeText(this, text, Toast.LENGTH_LONG).also { it.show() }
+        fallbackToast = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun drawToast() {
+        fallbackToast?.cancel()
+        // من أندرويد 11 وهدف 30 فأعلى تُمنع الرسائل المخصصة من الخلفية، فنستعمل نصاً عادياً
+        if (applicationInfo.targetSdkVersion >= 30) {
+            fallbackToast = Toast.makeText(this, toastText, Toast.LENGTH_LONG).also { it.show() }
+            return
+        }
+        val dm = resources.displayMetrics
+        val tv = TextView(this).apply {
+            text = toastText
+            setTextColor(0xFFFFE082.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
+            gravity = Gravity.CENTER
+            textDirection = View.TEXT_DIRECTION_RTL
+            setPadding(36, 20, 36, 20)
+            maxWidth = (dm.widthPixels * 0.8f).toInt()
+            background = GradientDrawable().apply {
+                setColor(0xE6000000.toInt())
+                cornerRadius = 24f
+            }
+        }
+        val t = Toast(this)
+        t.view = tv
+        t.duration = Toast.LENGTH_LONG
+        t.setGravity((if (toastBottom) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL, 0, 80)
+        t.show()
+        fallbackToast = t
     }
 
     private fun showPanel(lines: List<String>, bottom: Boolean) {
@@ -131,7 +190,7 @@ class TvService : Service() {
         main.removeCallbacks(hideRunnable)
         if (!Settings.canDrawOverlays(this)) {
             // بدون إذن العرض فوق التطبيقات: نعرض الترجمة كرسالة نصية قصيرة (لا تحتاج إذناً)
-            if (lines.isNotEmpty()) showToastFallback(lines.joinToString("\n"))
+            if (lines.isEmpty()) stopToast() else showToastFallback(lines, bottom)
             return
         }
         if (lines.isEmpty()) {
